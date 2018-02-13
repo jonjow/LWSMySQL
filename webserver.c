@@ -230,6 +230,13 @@ static void WebServer_closeLWS(WebServer *ws)
     ws->context = NULL;
 }
 
+static void WebServer_stopLWS(WebServer *ws)
+{
+    if(ws->context) {
+        lws_libuv_stop(ws->context);
+    }
+}
+
 static int WebServer_run(WebServer *ws)
 {
     printf("Running..\n");
@@ -313,6 +320,9 @@ static void WebServer_destroy(WebServer *ws)
     printf("Web Server destroying instance...\n");
 
     if(ws) {
+		WebServer_stopLWS(ws);
+		WebServer_closeLWS(ws);
+
         /* Stop and close the timer */
         uv_timer_stop(&ws->timer);
         uv_close((uv_handle_t *)&ws->timer, WebServer_timerClose);
