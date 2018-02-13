@@ -5,6 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <sys/time.h>
+
 #include <uv.h>
 
 #include <libwebsockets.h>
@@ -17,9 +19,9 @@ struct WebServer_t {
 	uv_signal_t sigint;
 	uv_signal_t sigterm;
 
-    uv_timer_t timer;
+	uv_timer_t timer;
 
-    struct lws_context *context;
+	struct lws_context *context;
 };
 
 WebServer *g_web_server = NULL;
@@ -36,19 +38,8 @@ enum WEBSERVER_PROTOCOLS {
 	WEBSERVER_PROTOCOL_NONE
 };
 
-/* list of supported protocols and callbacks */
-static struct lws_protocols protocols[] = {
-	/* first protocol must always be HTTP handler */
-	{
-		"http-only", /* name */
-		WebServer_callbackHTTP, /* callback */
-		sizeof (struct per_session_data__http), /* per_session_data_size */
-		0, /* max frame size / rx buffer */
-		0,
-		NULL
-	},
-
-	{ NULL, NULL, 0, 0, 0, NULL } /* terminator */
+struct per_session_data__http {
+	char cookie[512];
 };
 
 const char *WebServer_getMimeType(const char *file)
@@ -64,7 +55,7 @@ const char *WebServer_getMimeType(const char *file)
 }
 
 /* this protocol server (always the first one) handles external poll */
-int TestServiceLWS_HTTP_callback(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
+int WebServer_callbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
 {
 	struct per_session_data__http *pss = (struct per_session_data__http *)user;
 	unsigned char buffer[4096 + LWS_PRE];
@@ -72,6 +63,7 @@ int TestServiceLWS_HTTP_callback(struct lws *wsi, enum lws_callback_reasons reas
 	char leaf_path[1024];
 	const char *mimetype;
 	char *other_headers;
+	struct timeval tv;
 	unsigned char *end, *start;
 	unsigned char *p;
     char b64[64];
@@ -130,7 +122,7 @@ int TestServiceLWS_HTTP_callback(struct lws *wsi, enum lws_callback_reasons reas
 			buf[sizeof(buf) - 1] = '\0';
 
 			/* refuse to serve files we don't understand */
-			mimetype = get_mimetype(buf);
+			mimetype = WebServer_getMimeType(buf);
 			if (!mimetype) {
 				lws_return_http_status(wsi, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE, NULL);
 				goto terminate;
@@ -156,81 +148,12 @@ int TestServiceLWS_HTTP_callback(struct lws *wsi, enum lws_callback_reasons reas
 
 		case LWS_CALLBACK_HTTP_DROP_PROTOCOL :
 			/* called when our wsi user_space is going to be destroyed */
-			TestServiceLWS_HTTP_free(pss);
 			break;
 
 		case LWS_CALLBACK_HTTP_FILE_COMPLETION :
 			goto try_to_reuse;
 
-		case LWS_CALLBACK_HTTP_WRITEABLE :			
-			if(pss->data_string) {
-				/*
-				* we can send more of whatever it is we were sending
-				*/
-				sent = 0;
-				do {
-					/* we'd like the send this much */
-					n = ClibString_size(pss->data_string);
-
-					/* but if the peer told us he wants less, we can adapt */
-					m = lws_get_peer_write_allowance(wsi);
-
-					/* -1 means not using a protocol that has this info */
-					if (m == 0)
-						/* right now, peer can't handle anything */
-						goto later;
-
-					if (m != -1 && m < n)
-						/* he couldn't handle that much */
-						n = m;
-
-					/* sent it all, close conn */
-					if (n == 0)
-						break;
-
-					/*
-					* To support HTTP2, must take care about preamble space
-					*
-					* identification of when we send the last payload frame
-					* is handled by the library itself if you sent a
-					* content-length header
-					*/
-					m = lws_write(wsi, buffer + LWS_PRE, n, LWS_WRITE_HTTP);
-
-					/* need to send at index  */
-					m = lws_write(wsi, 
-						(unsigned char *)ClibString_cstr(pss->data_string), 
-						n, 
-						LWS_WRITE_HTTP
-					);
-
-					if (m < 0) {
-						lwsl_err("write failed\n");
-						/* write failed, close conn */
-
-						TestServiceLWS_HTTP_free(pss);						
-						return -1;
-					}
-
-					applog(CLIB_APPLOG_FACILITY_DEFAULT, CLIB_APPLOG_WARN, 
-						"%s: LWS_CALLBACK_HTTP_WRITEABLE sent[%d] left[%d]", 
-						__func__,
-						m,
-						(int)ClibString_size(pss->data_string)
-					);
-
-					pss->data_string = ClibString_erase_range(pss->data_string, 0, m);	
-
-					if (m) /* while still active, extend timeout */
-						lws_set_timeout(wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5);
-					sent += m;
-
-				} while (!lws_send_pipe_choked(wsi) && (sent < 1024 * 1024));
-
-				TestServiceLWS_HTTP_free(pss);
-
-				goto try_to_reuse;
-			}
+		case LWS_CALLBACK_HTTP_WRITEABLE :
 			return -1;
 
 		default:
@@ -257,6 +180,25 @@ later:
 	return 0;	
 }
 
+/* list of supported protocols and callbacks */
+static struct lws_protocols protocols[] = {
+	/* first protocol must always be HTTP handler */
+	{
+		"http-only", /* name */
+		WebServer_callbackHTTP, /* callback */
+		sizeof (struct per_session_data__http), /* per_session_data_size */
+		0, /* max frame size / rx buffer */
+		0,
+		NULL
+	},
+
+	{ NULL, NULL, 0, 0, 0, NULL } /* terminator */
+};
+
+static const struct lws_extension exts[] = {
+	{ NULL, NULL, NULL /* terminator */ }
+};
+
 static void WebServer_createLWS(WebServer *ws)
 {
     struct lws_context_creation_info info;
@@ -279,6 +221,13 @@ static void WebServer_createLWS(WebServer *ws)
 	info.options = LWS_SERVER_OPTION_LIBUV;
 
 	ws->context = lws_create_context(&info);    
+}
+
+static void WebServer_closeLWS(WebServer *ws)
+{
+    /* detach lws */
+    lws_context_destroy(ws->context);
+    ws->context = NULL;
 }
 
 static int WebServer_run(WebServer *ws)
