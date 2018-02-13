@@ -1,5 +1,5 @@
 /*
-    compile: gcc -o webserver webserver.c -luv -lwebsockets
+    compile: gcc -O0 -ggdb -fno-builtin -o webserver webserver.c -luv -lwebsockets
 */
 
 #include <stdio.h>
@@ -85,25 +85,6 @@ int WebServer_callbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, vo
 				return 0;
 			}
 
-            other_headers = leaf_path;
-            p = (unsigned char *)leaf_path;
-            if (!strcmp((const char *)in, "/") &&
-                !lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_COOKIE)) {
-                /* this isn't very unguessable but it'll do for us */
-                gettimeofday(&tv, NULL);
-                n = sprintf(b64, "test=LWS_%u_%u_COOKIE;Max-Age=360000",
-                    (unsigned int)tv.tv_sec,
-                    (unsigned int)tv.tv_usec);
-
-                if (lws_add_http_header_by_name(wsi,
-                    (unsigned char *)"set-cookie:",
-                    (unsigned char *)b64, n, &p,
-                    (unsigned char *)leaf_path + sizeof(leaf_path)))
-                    return 1;
-            }
-
-			n = (char *)p - leaf_path;
-
 			/* copy the resource path */
 			strcpy(buf, resource_path);			
 
@@ -127,6 +108,25 @@ int WebServer_callbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, vo
 				lws_return_http_status(wsi, HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE, NULL);
 				goto terminate;
 			}
+
+            other_headers = leaf_path;
+            p = (unsigned char *)leaf_path;
+            if (!strcmp((const char *)in, "/") &&
+                !lws_hdr_total_length(wsi, WSI_TOKEN_HTTP_COOKIE)) {
+                /* this isn't very unguessable but it'll do for us */
+                gettimeofday(&tv, NULL);
+                n = sprintf(b64, "test=LWS_%u_%u_COOKIE;Max-Age=360000",
+                    (unsigned int)tv.tv_sec,
+                    (unsigned int)tv.tv_usec);
+
+                if (lws_add_http_header_by_name(wsi,
+                    (unsigned char *)"set-cookie:",
+                    (unsigned char *)b64, n, &p,
+                    (unsigned char *)leaf_path + sizeof(leaf_path)))
+                    return 1;
+            }
+
+			n = (char *)p - leaf_path;
 
 			n = lws_serve_http_file(wsi, buf, mimetype, other_headers, n);
 			if (n < 0 || ((n > 0) && lws_http_transaction_completed(wsi))) {
@@ -220,7 +220,10 @@ static void WebServer_createLWS(WebServer *ws)
 	info.timeout_secs = 5;
 	info.options = LWS_SERVER_OPTION_LIBUV;
 
-	ws->context = lws_create_context(&info);    
+	ws->context = lws_create_context(&info);
+
+	/* we have our own uv loop outside of lws */
+    lws_uv_initloop(ws->context, ws->loop, 0);
 }
 
 static void WebServer_closeLWS(WebServer *ws)
