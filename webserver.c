@@ -11,6 +11,8 @@
 
 #include <libwebsockets.h>
 
+#define WEBSERVER_HOST_PORT 7688
+
 typedef struct WebServer_t WebServer;
 
 struct WebServer_t {
@@ -45,12 +47,46 @@ struct per_session_data__http {
 const char *WebServer_getMimeType(const char *file)
 {
 	int n = strlen(file);
+
 	if (n < 5)
 		return NULL;
+
+	if (!strcmp(&file[n - 4], ".ico"))
+		return "image/x-icon";
+
+	if (!strcmp(&file[n - 4], ".png"))
+		return "image/png";
+
+	if (!strcmp(&file[n - 4], ".gif"))
+		return "image/gif";		
+
+	if (!strcmp(&file[n - 4], ".jpg"))
+		return "image/jpg";	
+
+	if (!strcmp(&file[n - 5], ".jpeg"))
+		return "image/jpeg";	
+
 	if (!strcmp(&file[n - 5], ".html"))
 		return "text/html";
+
+	if (!strcmp(&file[n - 4], ".css"))
+		return "text/css";
+
 	if (!strcmp(&file[n - 3], ".js"))
-		return "text/javascript";	
+		return "text/javascript";
+
+	if (!strcmp(&file[n - 4], ".ttf"))
+		return "application/octet-stream";
+
+	if (!strcmp(&file[n - 5], ".woff"))
+		return "application/octet-stream";
+
+	if (!strcmp(&file[n - 6], ".woff2"))
+		return "application/octet-stream";		
+
+	if (!strcmp(&file[n - 4], ".map"))
+		return "application/octet-stream";	
+
 	return NULL;
 }
 
@@ -205,7 +241,7 @@ static void WebServer_createLWS(WebServer *ws)
     const char *iface = NULL;
 
 	memset(&info, 0, sizeof info);
-	info.port = 7683;
+	info.port = WEBSERVER_HOST_PORT;
 
 	info.iface = iface;
 	info.protocols = protocols;
