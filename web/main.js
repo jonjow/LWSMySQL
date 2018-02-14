@@ -52,7 +52,7 @@ mainAppClass.prototype = {
     connect: function() {
         var self = this;
 
-        console.log("websocket connect")
+        console.log("websocket connect");
 
         if (window.WebSocket) {
 			self.ws = new WebSocket(self.WS_URL, self.WS_PROTOCOL);
@@ -64,7 +64,8 @@ mainAppClass.prototype = {
 
         self.ws.onclose = function() {
             setTimeout(function() {
-                self.connect()
+                console.log("websocket closed");
+                self.connect();
             }, 1000);
         };
     },
