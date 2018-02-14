@@ -110,8 +110,11 @@ int WebServer_callbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, vo
 
 	switch (reason) {
 		case LWS_CALLBACK_HTTP :
+			printf("LWS_CALLBACK_HTTP\n");
+
 			if (len < 1) {
 				lws_return_http_status(wsi, HTTP_STATUS_BAD_REQUEST, NULL);
+				printf("HTTP_STATUS_BAD_REQUEST\n");
 				goto try_to_reuse;
 			}
 	
@@ -177,19 +180,27 @@ int WebServer_callbackHTTP(struct lws *wsi, enum lws_callback_reasons reason, vo
 			break;
 
 		case LWS_CALLBACK_HTTP_BODY :
+			printf("LWS_CALLBACK_HTTP_BODY\n");
 			break;
 
 		case LWS_CALLBACK_HTTP_BODY_COMPLETION :		
+			printf("LWS_CALLBACK_HTTP_BODY_COMPLETION\n");
 			goto try_to_reuse;
 
 		case LWS_CALLBACK_HTTP_DROP_PROTOCOL :
 			/* called when our wsi user_space is going to be destroyed */
+			printf("LWS_CALLBACK_HTTP_DROP_PROTOCOL\n");
 			break;
 
 		case LWS_CALLBACK_HTTP_FILE_COMPLETION :
 			goto try_to_reuse;
 
 		case LWS_CALLBACK_HTTP_WRITEABLE :
+			printf("LWS_CALLBACK_HTTP_WRITEABLE\n");
+			return -1;
+
+		case LWS_CALLBACK_CLOSED_CLIENT_HTTP:
+			printf("LWS_CALLBACK_CLOSED_CLIENT_HTTP\n");
 			return -1;
 
 		default:
@@ -216,6 +227,49 @@ later:
 	return 0;	
 }
 
+int WebServer_callbackWS(struct lws *wsi, enum lws_callback_reasons reason, void *user, void *in, size_t len)
+{
+    unsigned char buf[LWS_PRE + 512];
+    struct per_session_data__dumb_increment *pss = (struct per_session_data__dumb_increment *)user;
+    unsigned char *p = &buf[LWS_PRE];
+    int n, m;
+
+    switch (reason) {
+        case LWS_CALLBACK_ESTABLISHED :
+			printf("LWS_CALLBACK_ESTABLISHED\n");
+            break;
+
+        case LWS_CALLBACK_RECEIVE :
+			printf("LWS_CALLBACK_RECEIVE\n");
+            break;
+        
+        case LWS_CALLBACK_SERVER_WRITEABLE :
+			printf("LWS_CALLBACK_SERVER_WRITEABLE\n");
+            break;
+
+        case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION :
+			printf("LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION\n");
+            break;
+
+        case LWS_CALLBACK_CLIENT_CONNECTION_ERROR :
+			printf("LWS_CALLBACK_CLIENT_CONNECTION_ERROR\n");
+            break;
+
+        case LWS_CALLBACK_CLOSED :
+			printf("LWS_CALLBACK_CLOSED\n");
+            break;
+
+        case LWS_CALLBACK_WS_PEER_INITIATED_CLOSE :
+			printf("LWS_CALLBACK_WS_PEER_INITIATED_CLOSE\n");
+            break;
+
+        default:
+            break;
+    }
+
+    return 0;
+}
+
 /* list of supported protocols and callbacks */
 static struct lws_protocols protocols[] = {
 	/* first protocol must always be HTTP handler */
@@ -224,6 +278,15 @@ static struct lws_protocols protocols[] = {
 		WebServer_callbackHTTP, /* callback */
 		sizeof (struct per_session_data__http), /* per_session_data_size */
 		0, /* max frame size / rx buffer */
+		0,
+		NULL
+	},
+
+	{
+		"websocket-protocol",
+		WebServer_callbackWS,
+		64,
+		64, /* rx buf size must be >= permessage-deflate rx size */
 		0,
 		NULL
 	},
